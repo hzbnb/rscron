@@ -1,0 +1,12 @@
+[package]
+name = "rscron"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+croner = { version = "4.0.0", git = "https://github.com/hexagon/croner-rust", branch = "main", default-features = false, features = [
+    "jiff",
+] }
+jiff = "0.2.35"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
