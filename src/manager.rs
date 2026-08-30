@@ -69,8 +69,7 @@ impl TaskManager {
         Fut: Future<Output = ()> + Send + 'static,
     {
         options.validate()?;
-        let mut schedule = job_definition.build()?;
-        schedule.apply_interval_from_start(options.interval_from_start);
+        let schedule = job_definition.build()?;
         let id = TaskId::new(self.inner.next_id.fetch_add(1, Ordering::Relaxed) + 1);
         let name = options.task_name.unwrap_or_else(|| format!("task-{id}"));
         let handler: TaskHandler = Arc::new(move || Box::pin(handler()));
@@ -239,7 +238,6 @@ async fn run_task_loop(
     let mut schedule = schedule.activate(&ScheduleTime::now());
 
     if run_immediately {
-        schedule.record_immediate_started(tokio::time::Instant::now());
         handler().await;
     }
 
@@ -252,7 +250,7 @@ async fn run_task_loop(
             break;
         }
 
-        schedule.record_started(&next_run, tokio::time::Instant::now());
+        schedule.record_started(&next_run);
         handler().await;
     }
 }

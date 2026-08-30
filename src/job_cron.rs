@@ -24,7 +24,7 @@ pub struct JobCron {
 
 impl JobDefinition for JobCron {
     fn build(self) -> Result<JobSchedule, TaskManagerError> {
-        CronScheduler::new(&self.pattern)
+        SchedulerCron::new(&self.pattern)
             .map(Box::new)
             .map(JobSchedule::Cron)
             .map_err(TaskManagerError::from)
@@ -33,11 +33,11 @@ impl JobDefinition for JobCron {
 
 /// 负责解析 cron 表达式并计算下一次执行时间。
 #[derive(Clone, Debug)]
-pub struct CronScheduler {
+pub struct SchedulerCron {
     cron: Cron,
 }
 
-impl CronScheduler {
+impl SchedulerCron {
     /// 创建一个调度器，同时接受五段和六段 cron 表达式。
     pub fn new(pattern: &str) -> Result<Self, CronError> {
         CronParser::builder()

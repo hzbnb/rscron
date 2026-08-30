@@ -1,7 +1,7 @@
 use jiff::Zoned;
 use tokio::time::Instant;
 
-use crate::{CronScheduler, DurationScheduler, TaskManagerError};
+use crate::{SchedulerCron, SchedulerDuration, TaskManagerError};
 
 /// 创建任务时使用的调度定义。
 ///
@@ -15,20 +15,11 @@ pub trait JobDefinition {
 /// 任务管理器内置的调度类型。
 #[derive(Clone, Debug)]
 pub enum JobSchedule {
-    Cron(Box<CronScheduler>),
-    Duration(DurationScheduler),
+    Cron(Box<SchedulerCron>),
+    Duration(SchedulerDuration),
 }
 
 impl JobSchedule {
-    /// 将“从实际开始时间计算间隔”的策略应用到支持它的调度类型。
-    ///
-    /// Cron 本身提供固定的墙钟时间，因此有意忽略这个设置。
-    pub(crate) fn apply_interval_from_start(&mut self, enabled: bool) {
-        if let Self::Duration(scheduler) = self {
-            scheduler.set_interval_from_start(enabled);
-        }
-    }
-
     /// 为一次任务启动创建独立的调度运行态。
     ///
     /// 定义本身可以被重复启动；计划时间等可变状态只存在于本次运行中。
@@ -48,9 +39,9 @@ impl JobSchedule {
 /// 运行循环只依赖这个统一接口，不需要分别实现 Cron 和 Duration 的等待、
 /// 取消及任务调用流程。
 pub(crate) enum ActiveSchedule {
-    Cron(Box<CronScheduler>),
+    Cron(Box<SchedulerCron>),
     Duration {
-        scheduler: DurationScheduler,
+        scheduler: SchedulerDuration,
         schedule_from: Instant,
     },
 }
@@ -63,40 +54,14 @@ impl ActiveSchedule {
             Self::Duration {
                 scheduler,
                 schedule_from,
-            } => {
-                if scheduler.interval_from_start() {
-                    Ok(scheduler.next_run_from(*schedule_from))
-                } else {
-                    Ok(scheduler.next_scheduled_run(*schedule_from, now.monotonic))
-                }
-            }
+            } => Ok(scheduler.next_scheduled_run(*schedule_from, now.monotonic)),
         }
     }
 
-    /// 记录一次按计划触发的实际启动时间。
-    pub(crate) fn record_started(&mut self, next_run: &NextRun, actual_started_at: Instant) {
-        if let Self::Duration {
-            scheduler,
-            schedule_from,
-        } = self
-        {
-            *schedule_from = if scheduler.interval_from_start() {
-                actual_started_at
-            } else {
-                next_run.deadline
-            };
-        }
-    }
-
-    /// 记录由 `run_immediately` 触发的实际启动时间。
-    pub(crate) fn record_immediate_started(&mut self, actual_started_at: Instant) {
-        if let Self::Duration {
-            scheduler,
-            schedule_from,
-        } = self
-            && scheduler.interval_from_start()
-        {
-            *schedule_from = actual_started_at;
+    /// 记录一次按计划触发的计划时间。
+    pub(crate) fn record_started(&mut self, next_run: &NextRun) {
+        if let Self::Duration { schedule_from, .. } = self {
+            *schedule_from = next_run.deadline;
         }
     }
 }

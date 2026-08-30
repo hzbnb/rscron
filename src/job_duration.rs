@@ -23,32 +23,24 @@ pub struct JobDuration {
 
 impl JobDefinition for JobDuration {
     fn build(self) -> Result<JobSchedule, TaskManagerError> {
-        DurationScheduler::new(self.duration).map(JobSchedule::Duration)
+        SchedulerDuration::new(self.duration).map(JobSchedule::Duration)
     }
 }
 
 /// 负责计算固定间隔任务的下一次执行时间。
 #[derive(Clone, Copy, Debug)]
-pub struct DurationScheduler {
+pub struct SchedulerDuration {
     duration: Duration,
-    interval_from_start: bool,
 }
 
-impl DurationScheduler {
+impl SchedulerDuration {
     /// 创建一个固定间隔调度器。间隔必须大于零。
     pub fn new(duration: Duration) -> Result<Self, TaskManagerError> {
         if duration.is_zero() {
             return Err(TaskManagerError::InvalidDuration(duration));
         }
 
-        Ok(Self {
-            duration,
-            interval_from_start: false,
-        })
-    }
-
-    pub(crate) fn next_run_from(&self, from: Instant) -> NextRun {
-        NextRun::new(from + self.duration)
+        Ok(Self { duration })
     }
 
     /// 从固定计划时间轴上选择第一个不早于当前时间的运行点。
@@ -56,18 +48,28 @@ impl DurationScheduler {
     /// 和 gocron 一样，任务错过一个或多个 tick 时直接前进到未来的计划点，
     /// 而不是把实际延迟变成新的时间基准。
     pub(crate) fn next_scheduled_run(&self, scheduled_from: Instant, now: Instant) -> NextRun {
-        let mut next = scheduled_from + self.duration;
-        while next < now {
-            next += self.duration;
+        let elapsed = now.saturating_duration_since(scheduled_from);
+
+        // schedule_from 本身是上一次计划时间；尚未经过任何时间时，下一次运行
+        // 应当发生在一个完整间隔之后。
+        if elapsed.is_zero() {
+            return NextRun::new(scheduled_from + self.duration);
         }
-        NextRun::new(next)
-    }
 
-    pub(crate) fn set_interval_from_start(&mut self, enabled: bool) {
-        self.interval_from_start = enabled;
-    }
+        // 用除法取余一次定位到固定时间轴上的下一个 tick，避免因错过大量 tick
+        // 而逐次累加。若 now 恰好落在 tick 上，则允许立即运行。
+        let interval_nanos = self.duration.as_nanos();
+        let remainder_nanos = elapsed.as_nanos() % interval_nanos;
 
-    pub(crate) fn interval_from_start(&self) -> bool {
-        self.interval_from_start
+        if remainder_nanos == 0 {
+            return NextRun::new(now);
+        }
+
+        let until_next_nanos = interval_nanos - remainder_nanos;
+        let until_next = Duration::new(
+            (until_next_nanos / 1_000_000_000) as u64,
+            (until_next_nanos % 1_000_000_000) as u32,
+        );
+        NextRun::new(now + until_next)
     }
 }
