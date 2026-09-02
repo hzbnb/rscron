@@ -1,7 +1,10 @@
 [package]
 name = "rscron"
 version = "0.1.0"
+authors = ["hzb.gg"]
 edition = "2024"
+description = "rust定时任务库"
+license = "MIT"
 
 [dependencies]
 croner = { version = "4.0.0", default-features = false, features = ["jiff"] }
