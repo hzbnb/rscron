@@ -17,7 +17,8 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 [[package]]
 name = "croner"
 version = "4.0.0"
-source = "git+https://github.com/hexagon/croner-rust?branch=main#9babd913c2adc5d55948f1eb701ecdfe3bd13459"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a59ed87528b2ee2b6d2b14d6767f6dbe41867dfc581433fc23a7c0fae847467a"
 dependencies = [
  "derive_builder",
  "jiff",
