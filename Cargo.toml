@@ -5,6 +5,8 @@ authors = ["hzb.gg"]
 edition = "2024"
 description = "rust定时任务库"
 license = "MIT"
+repository = "https://github.com/hzbnb/rscron"
+documentation = "https://docs.rs/rscron"
 
 [dependencies]
 croner = { version = "4.0.0", default-features = false, features = ["jiff"] }
