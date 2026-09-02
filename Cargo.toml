@@ -1,6 +1,6 @@
 [package]
 name = "rscron"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["hzb.gg"]
 edition = "2024"
 description = "rust定时任务库"
