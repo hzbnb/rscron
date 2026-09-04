@@ -1,7 +1,10 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use rscron::{TaskManager, TaskStatus, job_duration, task_option};
-use tokio::{sync::mpsc, time::timeout};
+use tokio::{
+    sync::{Mutex, mpsc},
+    time::timeout,
+};
 
 #[tokio::test]
 async fn duration_task_run() {
@@ -67,9 +70,20 @@ async fn duration_task_run() {
 #[ignore = "需要手动按 Ctrl+C 结束"]
 async fn duration_task_runs_until_ctrl_c() {
     let manager = TaskManager::new();
+    let test = Arc::new(Mutex::new(0));
 
     let task_id = manager
-        .add(manual_run_task, job_duration(Duration::from_secs(10)))
+        .add(
+            move || {
+                let test = Arc::clone(&test);
+
+                async move {
+                    let mut test = test.lock().await;
+                    manual_run_task(&mut *test).await;
+                }
+            },
+            job_duration(Duration::from_secs(10)),
+        )
         .option(task_option::task_name("刷新缓存"))
         .option(task_option::run_immediately())
         .await
@@ -84,16 +98,57 @@ async fn duration_task_runs_until_ctrl_c() {
     assert!(manager.list().await.is_empty());
 }
 
-async fn manual_run_task() {
+async fn manual_run_task(test: &mut i32) {
+    *test += 1;
     let service_name = "demo-service";
     let task_name = "refresh-cache";
     let executed_at = jiff::Zoned::now();
 
     println!(
-        "服务 {service_name} 执行任务 {task_name}：{} 时间戳：{}\n",
+        "服务 {service_name} 执行任务 {task_name}：{} 时间戳：{} 执行次数：{test}\n",
         executed_at.strftime("%F %T %:Q"),
         executed_at.timestamp().as_millisecond()
     );
+}
+
+#[tokio::test]
+async fn duration_task_preserves_mutable_state() {
+    let manager = TaskManager::new();
+    let test = Arc::new(Mutex::new(0));
+    let task_test = Arc::clone(&test);
+    let (executed_tx, mut executed_rx) = mpsc::unbounded_channel();
+
+    manager
+        .add(
+            move || {
+                let test = Arc::clone(&task_test);
+                let executed_tx = executed_tx.clone();
+
+                async move {
+                    let mut test = test.lock().await;
+                    manual_run_task(&mut *test).await;
+                    executed_tx.send(*test).expect("记录任务执行次数失败");
+                }
+            },
+            job_duration(Duration::from_millis(20)),
+        )
+        .option(task_option::run_immediately())
+        .await
+        .expect("添加定时任务失败");
+
+    manager.start_all().await;
+
+    for expected in 1..=3 {
+        let count = timeout(Duration::from_secs(1), executed_rx.recv())
+            .await
+            .expect("等待任务执行超时")
+            .expect("任务执行通道意外关闭");
+        assert_eq!(count, expected);
+    }
+
+    manager.del_all().await;
+    assert!(*test.lock().await >= 3);
+    assert!(manager.list().await.is_empty());
 }
 
 async fn wait_for_exit() {
