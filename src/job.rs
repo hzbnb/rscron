@@ -1,15 +1,15 @@
 use jiff::Zoned;
 use tokio::time::Instant;
 
-use crate::{SchedulerCron, SchedulerDuration, TaskManagerError};
+use crate::{SchedulerCron, SchedulerDuration, TimerJobError};
 
 /// 创建任务时使用的调度定义。
 ///
-/// [`TaskManager::add`](crate::TaskManager::add) 只依赖这个抽象，因此可以用同一个
-/// 方法添加 cron 任务和固定间隔任务。
+/// [`TimerJobBuilder::add_timer`](crate::TimerJobBuilder::add_timer) 接受这个抽象，
+/// 并在最后调用 `build()` 时校验调度定义，支持 cron 和固定间隔任务。
 pub trait JobDefinition {
     /// 校验定义并创建一个可以被任务重复启动的调度配置。
-    fn build(self) -> Result<JobSchedule, TaskManagerError>;
+    fn build(self) -> Result<JobSchedule, TimerJobError>;
 }
 
 /// 任务管理器内置的调度类型。
@@ -48,7 +48,7 @@ pub(crate) enum ActiveSchedule {
 
 impl ActiveSchedule {
     /// 按当前调度策略计算下一次运行时间。
-    pub(crate) fn next_run(&self, now: &ScheduleTime) -> Result<NextRun, TaskManagerError> {
+    pub(crate) fn next_run(&self, now: &ScheduleTime) -> Result<NextRun, TimerJobError> {
         match self {
             Self::Cron(scheduler) => scheduler.next_run(now),
             Self::Duration {

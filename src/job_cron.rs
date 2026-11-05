@@ -5,7 +5,7 @@ use croner::{
 };
 
 use crate::{
-    TaskManagerError,
+    TimerJobError,
     job::{JobDefinition, JobSchedule, NextRun, ScheduleTime},
 };
 
@@ -23,11 +23,11 @@ pub struct JobCron {
 }
 
 impl JobDefinition for JobCron {
-    fn build(self) -> Result<JobSchedule, TaskManagerError> {
+    fn build(self) -> Result<JobSchedule, TimerJobError> {
         SchedulerCron::new(&self.pattern)
             .map(Box::new)
             .map(JobSchedule::Cron)
-            .map_err(TaskManagerError::from)
+            .map_err(TimerJobError::from)
     }
 }
 
@@ -47,7 +47,7 @@ impl SchedulerCron {
             .map(|cron| Self { cron })
     }
 
-    pub(crate) fn next_run(&self, now: &ScheduleTime) -> Result<NextRun, TaskManagerError> {
+    pub(crate) fn next_run(&self, now: &ScheduleTime) -> Result<NextRun, TimerJobError> {
         let scheduled_at = self.cron.find_next_occurrence(&now.wall_time, false)?;
         let delay = scheduled_at.duration_since(&now.wall_time).unsigned_abs();
 

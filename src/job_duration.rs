@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use crate::{
-    TaskManagerError,
+    TimerJobError,
     job::{JobDefinition, JobSchedule, NextRun},
 };
 
@@ -22,7 +22,7 @@ pub struct JobDuration {
 }
 
 impl JobDefinition for JobDuration {
-    fn build(self) -> Result<JobSchedule, TaskManagerError> {
+    fn build(self) -> Result<JobSchedule, TimerJobError> {
         SchedulerDuration::new(self.duration).map(JobSchedule::Duration)
     }
 }
@@ -35,9 +35,9 @@ pub struct SchedulerDuration {
 
 impl SchedulerDuration {
     /// 创建一个固定间隔调度器。间隔必须大于零。
-    pub fn new(duration: Duration) -> Result<Self, TaskManagerError> {
+    pub fn new(duration: Duration) -> Result<Self, TimerJobError> {
         if duration.is_zero() {
-            return Err(TaskManagerError::InvalidDuration(duration));
+            return Err(TimerJobError::InvalidDuration(duration));
         }
 
         Ok(Self { duration })

@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use rscron::{TaskManager, TaskStatus, job_duration, task_option};
+use rscron::{TimerJob, TimerJobManager, TimerJobStatus, job_duration, task_option};
 use tokio::{
     sync::{Mutex, mpsc},
     time::timeout,
@@ -8,44 +8,49 @@ use tokio::{
 
 #[tokio::test]
 async fn duration_task_run() {
-    let manager = TaskManager::new();
+    let manager = TimerJobManager::new();
     let (executed_tx, mut executed_rx) = mpsc::unbounded_channel();
 
-    let task_id = manager
-        .add(
-            move || {
-                let executed_tx = executed_tx.clone();
+    let job = move || {
+        let executed_tx = executed_tx.clone();
 
-                async move {
-                    let service_name = "demo-service";
-                    let task_name = "refresh-cache";
-                    let executed_at = jiff::Zoned::now();
+        async move {
+            let service_name = "demo-service";
+            let task_name = "refresh-cache";
+            let executed_at = jiff::Zoned::now();
 
-                    println!(
-                        "服务 {service_name} 执行任务 {task_name}：{} 时间戳：{}",
-                        executed_at.strftime("%F %T %:Q"),
-                        executed_at.timestamp().as_millisecond()
-                    );
+            println!(
+                "服务 {service_name} 执行任务 {task_name}：{} 时间戳：{}",
+                executed_at.strftime("%F %T %:Q"),
+                executed_at.timestamp().as_millisecond()
+            );
 
-                    executed_tx.send(()).expect("记录任务执行结果失败");
-                }
-            },
-            job_duration(Duration::from_millis(20)),
-        )
+            executed_tx.send(()).expect("记录任务执行结果失败");
+        }
+    };
+
+    let timer_job = TimerJob::builder()
+        .add_job(job)
+        .add_timer(job_duration(Duration::from_millis(20)))
         .option(task_option::task_name("刷新缓存"))
         .option(task_option::run_immediately())
-        .await
-        .expect("添加定时任务失败");
+        .build()
+        .expect("构建定时任务失败");
+    let task_id = manager.add(timer_job).await;
 
     let task = manager.get(task_id).await.expect("找不到刚添加的任务");
     assert_eq!(task.name, "刷新缓存");
-    assert_eq!(task.status, TaskStatus::Stopped);
+    assert_eq!(task.status, TimerJobStatus::Stopped);
     assert!(task.run_immediately);
+    assert!(matches!(
+        executed_rx.try_recv(),
+        Err(mpsc::error::TryRecvError::Empty)
+    ));
 
     manager.start_all().await;
 
     let task = manager.get(task_id).await.expect("找不到已启动的任务");
-    assert_eq!(task.status, TaskStatus::Running);
+    assert_eq!(task.status, TimerJobStatus::Running);
 
     // 第一次来自 run_immediately，第二次来自固定间隔调度。
     timeout(Duration::from_secs(1), executed_rx.recv())
@@ -69,25 +74,26 @@ async fn duration_task_run() {
 #[tokio::test]
 #[ignore = "需要手动按 Ctrl+C 结束"]
 async fn duration_task_runs_until_ctrl_c() {
-    let manager = TaskManager::new();
+    let manager = TimerJobManager::new();
     let test = Arc::new(Mutex::new(0));
 
-    let task_id = manager
-        .add(
-            move || {
-                let test = Arc::clone(&test);
+    let job = move || {
+        let test = Arc::clone(&test);
 
-                async move {
-                    let mut test = test.lock().await;
-                    manual_run_task(&mut *test).await;
-                }
-            },
-            job_duration(Duration::from_secs(10)),
-        )
+        async move {
+            let mut test = test.lock().await;
+            manual_run_task(&mut test).await;
+        }
+    };
+
+    let timer_job = TimerJob::builder()
+        .add_job(job)
+        .add_timer(job_duration(Duration::from_secs(10)))
         .option(task_option::task_name("刷新缓存"))
         .option(task_option::run_immediately())
-        .await
-        .expect("添加定时任务失败");
+        .build()
+        .expect("构建定时任务失败");
+    let task_id = manager.add(timer_job).await;
 
     manager.start_all().await;
     println!("任务 {task_id} 已启动，按 Ctrl+C 或发送 SIGTERM 可停止服务。\n");
@@ -113,28 +119,29 @@ async fn manual_run_task(test: &mut i32) {
 
 #[tokio::test]
 async fn duration_task_preserves_mutable_state() {
-    let manager = TaskManager::new();
+    let manager = TimerJobManager::new();
     let test = Arc::new(Mutex::new(0));
     let task_test = Arc::clone(&test);
     let (executed_tx, mut executed_rx) = mpsc::unbounded_channel();
 
-    manager
-        .add(
-            move || {
-                let test = Arc::clone(&task_test);
-                let executed_tx = executed_tx.clone();
+    let job = move || {
+        let test = Arc::clone(&task_test);
+        let executed_tx = executed_tx.clone();
 
-                async move {
-                    let mut test = test.lock().await;
-                    manual_run_task(&mut *test).await;
-                    executed_tx.send(*test).expect("记录任务执行次数失败");
-                }
-            },
-            job_duration(Duration::from_millis(20)),
-        )
+        async move {
+            let mut test = test.lock().await;
+            manual_run_task(&mut test).await;
+            executed_tx.send(*test).expect("记录任务执行次数失败");
+        }
+    };
+
+    let timer_job = TimerJob::builder()
+        .add_job(job)
+        .add_timer(job_duration(Duration::from_millis(20)))
         .option(task_option::run_immediately())
-        .await
-        .expect("添加定时任务失败");
+        .build()
+        .expect("构建定时任务失败");
+    manager.add(timer_job).await;
 
     manager.start_all().await;
 
@@ -170,7 +177,7 @@ async fn wait_for_exit() {
     tokio::signal::ctrl_c().await.expect("监听 Ctrl+C 失败");
 }
 
-async fn shutdown(manager: &TaskManager) {
+async fn shutdown(manager: &TimerJobManager) {
     println!("收到退出信号，正在停止所有任务……");
 
     manager.del_all().await;

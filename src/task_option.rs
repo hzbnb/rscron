@@ -1,4 +1,4 @@
-use crate::TaskManagerError;
+use crate::TimerJobError;
 
 /// 设置任务名称。
 pub fn task_name(name: impl Into<String>) -> TaskOption {
@@ -14,7 +14,7 @@ pub fn run_immediately() -> TaskOption {
     }
 }
 
-/// 可以通过 [`TaskBuilder::option`](crate::TaskBuilder::option) 应用的单个任务选项。
+/// 可以通过 [`TimerJobBuilder::option`](crate::TimerJobBuilder::option) 应用的单个任务选项。
 pub struct TaskOption {
     kind: TaskOptionKind,
 }
@@ -39,13 +39,13 @@ impl TaskOptions {
         }
     }
 
-    pub(crate) fn validate(&self) -> Result<(), TaskManagerError> {
+    pub(crate) fn validate(&self) -> Result<(), TimerJobError> {
         if self
             .task_name
             .as_ref()
             .is_some_and(|name| name.trim().is_empty())
         {
-            return Err(TaskManagerError::EmptyTaskName);
+            return Err(TimerJobError::EmptyTaskName);
         }
 
         Ok(())
